@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dairy POS Cloud</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .tap-scale:active { transform: scale(0.98); }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900 font-sans" x-data="dairyApp()" x-init="init()">
+
+    <template x-if="!isLoggedIn">
+        <div class="fixed inset-0 bg-green-900 flex items-center justify-center p-6 z-[100]">
+            <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8">
+                <h1 class="text-2xl font-bold text-center text-green-800 mb-6">Dairy Login</h1>
+                <div class="space-y-4">
+                    <input type="text" x-model="loginData.name" placeholder="Dealer Name" class="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-green-500">
+                    <input type="password" inputmode="numeric" x-model="loginData.pin" placeholder="PIN (Admin: 9999)" class="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-green-500">
+                    <button @click="login()" class="w-full bg-green-600 text-white font-bold py-4 rounded-2xl shadow-lg tap-scale">Start Billing</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template x-if="isLoggedIn">
+        <div class="min-h-screen flex flex-col">
+            <header class="bg-white border-b sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-sm">
+                <div>
+                    <h2 class="font-bold text-green-700 leading-none" x-text="dealerName + (isAdmin ? ' (Admin)' : '')"></h2>
+                    <span class="text-[10px] text-gray-400 font-bold" x-text="currentDate"></span>
+                </div>
+                <div class="flex bg-gray-100 rounded-xl p-1">
+                    <button @click="view = 'billing'" :class="view === 'billing' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500'" class="px-4 py-2 rounded-lg text-sm font-bold transition">Billing</button>
+                    <button @click="view = 'reports'" :class="view === 'reports' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500'" class="px-4 py-2 rounded-lg text-sm font-bold transition">Reports</button>
+                    <button @click="logout()" class="ml-2 text-red-500 p-2">✕</button>
+                </div>
+            </header>
+
+            <main x-show="view === 'billing'" class="flex-1 p-4 space-y-6 pb-60">
+                <template x-for="(items, category) in products" :key="category">
+                    <section>
+                        <h3 class="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 border-l-4 border-green-500 pl-2" x-text="category"></h3>
+                        <div class="space-y-3">
+                            <template x-for="item in items" :key="item.id">
+                                <div class="bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between border border-gray-100">
+                                    <div class="flex-1">
+                                        <p class="font-bold text-gray-800 text-sm" x-text="item.name"></p>
+                                        <p class="text-[10px] text-gray-500" x-text="item.size + ' • ₹' + item.price"></p>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button @click="adjust(item.id, -1)" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full font-bold text-gray-600">-</button>
+                                        <input type="number" x-model.number="quantities[item.id]" placeholder="0" class="w-12 h-10 text-center bg-gray-50 border rounded-lg font-bold text-green-700 outline-none">
+                                        <button @click="adjust(item.id, 1)" class="w-8 h-8 flex items-center justify-center bg-green-100 rounded-full font-bold text-green-700">+</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </section>
+                </template>
+            </main>
+
+            <main x-show="view === 'reports'" class="flex-1 p-4 pb-10" x-cloak>
+                <div class="bg-green-700 text-white p-6 rounded-3xl mb-6 shadow-lg">
+                    <p class="text-green-100 text-sm font-bold">Cloud Total (All Dealers)</p>
+                    <h2 class="text-4xl font-black" x-text="'₹' + globalTotal"></h2>
+                </div>
+
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-gray-600">Global Sales History</h3>
+                    <template x-if="isAdmin">
+                        <button @click="clearCloud()" class="bg-red-100 text-red-600 text-xs font-bold px-3 py-1 rounded-lg">WIPE CLOUD</button>
+                    </template>
+                </div>
+
+                <div class="space-y-3">
+                    <template x-for="sale in salesLog" :key="sale.id">
+                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-50">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <span class="text-[10px] font-bold text-white bg-green-500 px-2 py-0.5 rounded-full uppercase" x-text="sale.dealer"></span>
+                                    <p class="text-[10px] text-gray-400 mt-1" x-text="sale.timestamp"></p>
+                                </div>
+                                <span class="font-black text-green-600 text-lg" x-text="'₹' + sale.total"></span>
+                            </div>
+                            <p class="text-[11px] text-gray-500 mt-2 p-2 bg-gray-50 rounded-lg" x-text="sale.summary"></p>
+                        </div>
+                    </template>
+                </div>
+            </main>
+
+            <div x-show="cartTotal > 0 && view === 'billing'" class="fixed bottom-0 inset-x-0 bg-white border-t p-6 shadow-2xl rounded-t-[2.5rem]">
+                <div class="flex justify-between items-center mb-4">
+                    <span class="text-3xl font-black text-gray-900" x-text="'₹' + cartTotal"></span>
+                    <button @click="quantities = {}" class="text-red-500 font-bold text-sm">Cancel</button>
+                </div>
+                <button @click="saveToCloud()" class="w-full bg-green-700 text-white py-4 rounded-2xl font-black text-xl shadow-xl tap-scale transition-all">
+                    SYNC TO CLOUD
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        const DATABASE_URL = "https://diary-pis-default-rtdb.asia-southeast1.firebasedatabase.app/"; 
+
+        function dairyApp() {
+            return {
+                isLoggedIn: false, isAdmin: false, dealerName: '', view: 'billing',
+                currentDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+                loginData: { name: '', pin: '' }, quantities: {}, salesLog: [],
+                products: {
+                    'FCM Milk': [{id:1,name:'FCM 1000ml',size:'1L',price:69},{id:2,name:'FCM 500ml',size:'500ml',price:36.5},{id:3,name:'FCM 180ml',size:'180ml',price:13.5},{id:4,name:'FCM 110ml',size:'110ml',price:9}],
+                    'Arokya Curd': [{id:5,name:'Arokya 400ml',size:'400ml',price:30},{id:6,name:'Arokya 110ml',size:'110ml',price:8.5}],
+                    'Hatsun Curd': [{id:7,name:'Hatsun 500ml',size:'500ml',price:36},{id:8,name:'Hatsun 400ml',size:'400ml',price:30},{id:9,name:'Hatsun 110ml',size:'110ml',price:8.5}],
+                    'Cup Curd': [{id:10,name:'Cup 200g',size:'200g',price:20},{id:11,name:'Cup 85g',size:'85g',price:8.5}],
+                    'Paneer': [{id:12,name:'Arokya Paneer',size:'Unit',price:92},{id:13,name:'Hatsun Paneer',size:'Unit',price:102}]
+                },
+                init() {
+                    const user = localStorage.getItem('dairy_user');
+                    if (user) { this.dealerName = user; this.isLoggedIn = true; this.isAdmin = (user === 'Admin'); }
+                    this.fetchSales();
+                    setInterval(() => this.fetchSales(), 15000); 
+                },
+                login() {
+                    if (this.loginData.name.toLowerCase() === 'admin' && this.loginData.pin === '9999') {
+                        this.isAdmin = true; this.dealerName = 'Admin';
+                    } else {
+                        this.dealerName = this.loginData.name;
+                        this.isAdmin = false;
+                    }
+                    if (this.dealerName) {
+                        this.isLoggedIn = true;
+                        localStorage.setItem('dairy_user', this.dealerName);
+                    }
+                },
+                logout() { this.isLoggedIn = false; localStorage.removeItem('dairy_user'); },
+                adjust(id, c) { this.quantities[id] = Math.max(0, (this.quantities[id] || 0) + c); },
+                get cartTotal() {
+                    let t = 0;
+                    Object.values(this.products).flat().forEach(p => t += (p.price * (this.quantities[p.id] || 0)));
+                    return t.toFixed(2);
+                },
+                get globalTotal() {
+                    return this.salesLog.reduce((s, n) => s + parseFloat(n.total), 0).toFixed(2);
+                },
+                async saveToCloud() {
+                    let items = [];
+                    Object.values(this.products).flat().forEach(p => {
+                        let q = this.quantities[p.id] || 0;
+                        if (q > 0) items.push(`${q}x ${p.name}`);
+                    });
+                    const sale = {
+                        id: Date.now(),
+                        timestamp: new Date().toLocaleString('en-IN'),
+                        dealer: this.dealerName,
+                        total: this.cartTotal,
+                        summary: items.join(', ')
+                    };
+                    try {
+                        await fetch(`${DATABASE_URL}/sales.json`, { method: 'POST', body: JSON.stringify(sale) });
+                        this.quantities = {};
+                        this.fetchSales();
+                        alert('Sale Synced Successfully!');
+                    } catch (e) { alert('Sync Failed. Check internet.'); }
+                },
+                async fetchSales() {
+                    try {
+                        const res = await fetch(`${DATABASE_URL}/sales.json`);
+                        const data = await res.json();
+                        this.salesLog = data ? Object.values(data).reverse() : [];
+                    } catch (e) { console.error("Fetch Error"); }
+                },
+                async clearCloud() {
+                    if(confirm("Admin: DELETE ALL CLOUD DATA?")) {
+                        await fetch(`${DATABASE_URL}/sales.json`, { method: 'DELETE' });
+                        this.fetchSales();
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
